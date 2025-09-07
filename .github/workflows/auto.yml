@@ -2,14 +2,15 @@ name: Run auto
 
 on:
   schedule:
-    - cron: "1 16 * * *"
-    - cron: "0 6 * * *"
+    - cron: "01 16 * * *"
+    - cron: "00 06 * * *"
+    - cron: '01 17 * * *'
   workflow_dispatch:   
     
 
 jobs:
   run-main:
-    runs-on: windows-2025
+    runs-on: windows-latest
 
     steps:
     - uses: actions/checkout@v3
