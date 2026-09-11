@@ -30,28 +30,16 @@ jobs:
       env:
         PYTHONIOENCODING: utf-8
 
-    - name: Install Google Chrome
-      run: |
-        $ProgressPreference = 'SilentlyContinue'
-        Invoke-WebRequest -Uri "https://dl.google.com/chrome/install/latest/chrome_installer.exe" -OutFile "chrome_installer.exe"
-        Start-Process -FilePath "chrome_installer.exe" -ArgumentList "/silent /install" -NoNewWindow -Wait
-
-    - name: Install ChromeDriver
-      run: |
-        $chromeVersion = (Invoke-WebRequest -Uri "https://chromedriver.storage.googleapis.com/LATEST_RELEASE").Content
-        Invoke-WebRequest -Uri "https://chromedriver.storage.googleapis.com/$chromeVersion/chromedriver_win32.zip" -OutFile "chromedriver.zip"
-        Expand-Archive chromedriver.zip -DestinationPath "./chromedriver-win64/"
-        $Env:PATH += ";$PWD\chromedriver-win64"
-
-    - name: Check ChromeDriver Installation
-      run: |
-        if (-not (Test-Path "./chromedriver-win64/chromedriver.exe")) {
-          throw "ChromeDriver not found at expected location"
-        }
-        
-    - name: Set ChromeDriver Path
-      run: |
-          $Env:PATH += ";$PWD\chromedriver-win64"
+    - name: Remove incompatible ChromeDriver from PATH
+    shell: pwsh
+    run: |
+      $oldDriver = "C:\SeleniumWebDrivers\ChromeDriver\chromedriver.exe"
+      if (Test-Path $oldDriver) {
+        Remove-Item $oldDriver -Force
+        Write-Host "Removed old ChromeDriver: $oldDriver"
+      } else {
+        Write-Host "No pre-existing ChromeDriver found at $oldDriver"
+      }
       
         
     - name: Run main.py
