@@ -5,7 +5,8 @@ on:
     - cron: "01 16 * * *"
     - cron: "00 06 * * *"
     - cron: '01 17 * * *'
-  workflow_dispatch:
+  workflow_dispatch:   
+    
 
 jobs:
   run-main:
@@ -25,49 +26,38 @@ jobs:
         if (Test-Path requirements.txt) {
           pip install -r requirements.txt
         }
+
       env:
         PYTHONIOENCODING: utf-8
 
-    - name: Remove incompatible ChromeDriver from PATH
-      shell: pwsh
-      run: |
-        $oldDriver = "C:\SeleniumWebDrivers\ChromeDriver\chromedriver.exe"
-        if (Test-Path $oldDriver) {
-          Remove-Item $oldDriver -Force
-          Write-Host "Removed old ChromeDriver: $oldDriver"
-        }
-
     - name: Install Google Chrome
-      shell: pwsh
       run: |
         $ProgressPreference = 'SilentlyContinue'
-        Invoke-WebRequest -Uri "https://edgedl.me/chrome/install/latest/chrome_installer.exe" -OutFile "chrome_installer.exe"
+        Invoke-WebRequest -Uri "https://dl.google.com/chrome/install/latest/chrome_installer.exe" -OutFile "chrome_installer.exe"
         Start-Process -FilePath "chrome_installer.exe" -ArgumentList "/silent /install" -NoNewWindow -Wait
-        Remove-Item "chrome_installer.exe" -Force
 
     - name: Install ChromeDriver
-      shell: pwsh
       run: |
-        $chromeVersion = (Get-ItemProperty 'HKLM:\SOFTWARE\Google\Chrome\Binaries' -Name 'Version' -ErrorAction SilentlyContinue).Version
-        if (-not $chromeVersion) {
-          $chromeVersion = "latest"
-        }
-        $url = "https://chromedriver.chromium.org/downloads"
-        $chromeDriver = "https://googlechromelabs.github.io/chrome-for-testing/latest-versions-per-milestone.json"
-        
-        $response = Invoke-WebRequest -Uri $chromeDriver | ConvertFrom-Json
-        $driverVersion = $response.milestones | Get-Member -MemberType NoteProperty | ForEach-Object {$response.milestones.$($_.Name).version} | Select-Object -First 1
-        
-        $downloadUrl = "https://edgedl.me/chromedriver/chromedriver-win64.zip"
-        Invoke-WebRequest -Uri $downloadUrl -OutFile "chromedriver.zip"
-        Expand-Archive "chromedriver.zip" -DestinationPath "chromedriver-win64" -Force
-        echo "$PWD\chromedriver-win64\chromedriver-win64" >> $env:GITHUB_PATH
+        $chromeVersion = (Invoke-WebRequest -Uri "https://chromedriver.storage.googleapis.com/LATEST_RELEASE").Content
+        Invoke-WebRequest -Uri "https://chromedriver.storage.googleapis.com/$chromeVersion/chromedriver_win32.zip" -OutFile "chromedriver.zip"
+        Expand-Archive chromedriver.zip -DestinationPath "./chromedriver-win64/"
+        $Env:PATH += ";$PWD\chromedriver-win64"
 
+    - name: Check ChromeDriver Installation
+      run: |
+        if (-not (Test-Path "./chromedriver-win64/chromedriver.exe")) {
+          throw "ChromeDriver not found at expected location"
+        }
+        
+    - name: Set ChromeDriver Path
+      run: |
+          $Env:PATH += ";$PWD\chromedriver-win64"
+      
+        
     - name: Run main.py
-      shell: pwsh
       env:
         SETTINGS_JSON: ${{ secrets.SETTINGS_JSON }}
       run: |
-        $env:SETTINGS_JSON | Out-File -FilePath "setting.json" -Encoding UTF8
+        echo $env:SETTINGS_JSON > setting.json
         python main.py
-        Remove-Item "setting.json" -Force
+        Remove-Item setting.json
