@@ -5,8 +5,7 @@ on:
     - cron: "01 16 * * *"
     - cron: "00 06 * * *"
     - cron: '01 17 * * *'
-  workflow_dispatch:   
-    
+  workflow_dispatch:
 
 jobs:
   run-main:
@@ -26,22 +25,20 @@ jobs:
         if (Test-Path requirements.txt) {
           pip install -r requirements.txt
         }
-
       env:
         PYTHONIOENCODING: utf-8
 
     - name: Remove incompatible ChromeDriver from PATH
-    shell: pwsh
-    run: |
-      $oldDriver = "C:\SeleniumWebDrivers\ChromeDriver\chromedriver.exe"
-      if (Test-Path $oldDriver) {
-        Remove-Item $oldDriver -Force
-        Write-Host "Removed old ChromeDriver: $oldDriver"
-      } else {
-        Write-Host "No pre-existing ChromeDriver found at $oldDriver"
-      }
-      
-        
+      shell: pwsh
+      run: |
+        $oldDriver = "C:\SeleniumWebDrivers\ChromeDriver\chromedriver.exe"
+        if (Test-Path $oldDriver) {
+          Remove-Item $oldDriver -Force
+          Write-Host "Removed old ChromeDriver: $oldDriver"
+        } else {
+          Write-Host "No pre-existing ChromeDriver found at $oldDriver"
+        }
+
     - name: Run main.py
       env:
         SETTINGS_JSON: ${{ secrets.SETTINGS_JSON }}
