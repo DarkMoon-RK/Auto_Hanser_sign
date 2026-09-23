@@ -7,13 +7,10 @@ on:
     - cron: "01 17 * * *"
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 jobs:
   run-main:
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repository
@@ -23,62 +20,70 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-          cache: pip
 
       - name: Install dependencies
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-
           python -m pip install --upgrade pip
-
           if (Test-Path "requirements.txt") {
             python -m pip install -r requirements.txt
           }
 
-      - name: Check Chrome and Selenium
+      - name: Install Google Chrome
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $ProgressPreference = "SilentlyContinue"
+
+          $chromePath = "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe"
+          if (-not (Test-Path $chromePath)) {
+            Invoke-WebRequest `
+              -Uri "https://dl.google.com/chrome/install/latest/chrome_installer.exe" `
+              -OutFile "$env:TEMP\chrome_installer.exe"
+
+            Start-Process `
+              -FilePath "$env:TEMP\chrome_installer.exe" `
+              -ArgumentList "/silent /install" `
+              -NoNewWindow -Wait
+          }
+
+          if (-not (Test-Path $chromePath)) {
+            throw "Chrome installation failed."
+          }
+
+      - name: Install matching ChromeDriver
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
 
-          $chromePaths = @(
-            "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe",
-            "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
-            "${env:LOCALAPPDATA}\Google\Chrome\Application\chrome.exe"
-          )
+          $chromePath = "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe"
+          $version = (Get-Item $chromePath).VersionInfo.ProductVersion
+          $major = ($version.Split('.')[0])
 
-          $chromePath = $chromePaths |
-            Where-Object {
-              $_ -and (Test-Path $_)
-            } |
-            Select-Object -First 1
+          $driverVersion = (Invoke-RestMethod "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_$major").Trim()
+          $driverDir = "C:\tools\chromedriver"
+          $driverZip = "$env:TEMP\chromedriver.zip"
+          $driverExe = "$driverDir\chromedriver.exe"
 
-          if (-not $chromePath) {
-            throw "Google Chrome was not found."
+          New-Item -ItemType Directory -Force -Path $driverDir | Out-Null
+
+          Invoke-WebRequest `
+            -Uri "https://chromedriver.storage.googleapis.com/$driverVersion/chromedriver_win32.zip" `
+            -OutFile $driverZip
+
+          Expand-Archive -Path $driverZip -DestinationPath $driverDir -Force
+
+          if (-not (Test-Path $driverExe)) {
+            throw "ChromeDriver download or extraction failed."
           }
 
-          $chromeVersion = (Get-Item $chromePath).VersionInfo.ProductVersion
+          $env:PATH = "$driverDir;$env:PATH"
 
-          Write-Host "Chrome path: $chromePath"
-          Write-Host "Chrome version: $chromeVersion"
+          Write-Host "Chrome version: $version"
+          Write-Host "ChromeDriver version: $driverVersion"
 
-          python -c "import selenium; print('Selenium version:', selenium.__version__)"
-
-      - name: Remove old ChromeDriver from workspace
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          # 删除旧 workflow 可能遗留的 ChromeDriver
-          if (Test-Path "chromedriver.exe") {
-            Remove-Item "chromedriver.exe" -Force
-          }
-
-          if (Test-Path "chromedriver-win64") {
-            Remove-Item "chromedriver-win64" -Recurse -Force
-          }
-
-      - name: Create settings file
+      - name: Create settings.json
         shell: pwsh
         env:
           SETTINGS_JSON: ${{ secrets.SETTINGS_JSON }}
@@ -86,23 +91,18 @@ jobs:
           $ErrorActionPreference = "Stop"
 
           if ([string]::IsNullOrWhiteSpace($env:SETTINGS_JSON)) {
-            throw "SETTINGS_JSON secret is empty or missing."
+            throw "SETTINGS_JSON secret is empty."
           }
 
-          $env:SETTINGS_JSON |
-            Set-Content -Path "setting.json" -Encoding utf8
-
-          python -c "import json; json.load(open('setting.json', encoding='utf-8')); print('SETTINGS_JSON is valid JSON')"
+          $env:SETTINGS_JSON | Set-Content -Path "setting.json" -Encoding utf8
 
       - name: Run main.py
         shell: pwsh
-        env:
-          SE_MANAGER_PATH: ""
         run: |
           $ErrorActionPreference = "Stop"
           python main.py
 
-      - name: Remove settings file
+      - name: Cleanup
         if: always()
         shell: pwsh
         run: |
