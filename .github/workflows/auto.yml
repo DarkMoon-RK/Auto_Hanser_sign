@@ -52,36 +52,53 @@ jobs:
             throw "Chrome installation failed."
           }
 
-      - name: Install matching ChromeDriver
+      - name: Install matching ChromeDriver from Chrome for Testing API
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
 
           $chromePath = "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe"
-          $version = (Get-Item $chromePath).VersionInfo.ProductVersion
-          $major = ($version.Split('.')[0])
+          $chromeVersion = (Get-Item $chromePath).VersionInfo.ProductVersion
+          Write-Host "Installed Chrome version: $chromeVersion"
 
-          $driverVersion = (Invoke-RestMethod "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_$major").Trim()
+          # 只取 3 段版本号，例如 152.0.0.0 -> 152.0.0.0
+          $version = $chromeVersion.Trim()
+
+          # 查询 Chrome for Testing 的已知版本
+          $knownGood = Invoke-RestMethod "https://googlechromelabs.github.io/chrome-for-testing/known-good-versions.json"
+
+          # 找到精确的 Chrome 版本
+          $match = $knownGood.versions |
+            Where-Object { $_.version -eq $version } |
+            Select-Object -First 1
+
+          if (-not $match) {
+            throw "No matching Chrome for Testing version found for Chrome $version"
+          }
+
+          $driverInfo = $match.downloads.chromedriver |
+            Where-Object { $_.platform -eq "win64" } |
+            Select-Object -First 1
+
+          if (-not $driverInfo) {
+            throw "No compatible win64 ChromeDriver found for Chrome $version"
+          }
+
+          $driverUrl = $driverInfo.url
           $driverDir = "C:\tools\chromedriver"
           $driverZip = "$env:TEMP\chromedriver.zip"
           $driverExe = "$driverDir\chromedriver.exe"
 
           New-Item -ItemType Directory -Force -Path $driverDir | Out-Null
-
-          Invoke-WebRequest `
-            -Uri "https://chromedriver.storage.googleapis.com/$driverVersion/chromedriver_win32.zip" `
-            -OutFile $driverZip
-
+          Invoke-WebRequest -Uri $driverUrl -OutFile $driverZip
           Expand-Archive -Path $driverZip -DestinationPath $driverDir -Force
 
           if (-not (Test-Path $driverExe)) {
-            throw "ChromeDriver download or extraction failed."
+            throw "ChromeDriver extraction failed."
           }
 
           $env:PATH = "$driverDir;$env:PATH"
-
-          Write-Host "Chrome version: $version"
-          Write-Host "ChromeDriver version: $driverVersion"
+          Write-Host "ChromeDriver downloaded from: $driverUrl"
 
       - name: Create settings.json
         shell: pwsh
