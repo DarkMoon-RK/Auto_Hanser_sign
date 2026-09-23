@@ -7,6 +7,9 @@ on:
     - cron: "01 17 * * *"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   run-main:
     runs-on: windows-latest
@@ -21,86 +24,105 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+
           python -m pip install --upgrade pip
+
           if (Test-Path "requirements.txt") {
             python -m pip install -r requirements.txt
           }
 
-      - name: Install Google Chrome
+      - name: Install matching Chrome and ChromeDriver
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           $ProgressPreference = "SilentlyContinue"
 
-          $chromePath = "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe"
-          if (-not (Test-Path $chromePath)) {
-            Invoke-WebRequest `
-              -Uri "https://dl.google.com/chrome/install/latest/chrome_installer.exe" `
-              -OutFile "$env:TEMP\chrome_installer.exe"
+          $chromeRoot = "C:\tools\chrome"
+          $driverRoot = "C:\tools\chromedriver"
 
-            Start-Process `
-              -FilePath "$env:TEMP\chrome_installer.exe" `
-              -ArgumentList "/silent /install" `
-              -NoNewWindow -Wait
-          }
+          $chromeZip = "$env:TEMP\chrome-win64.zip"
+          $driverZip = "$env:TEMP\chromedriver-win64.zip"
 
-          if (-not (Test-Path $chromePath)) {
-            throw "Chrome installation failed."
-          }
+          $chromeExe = "$chromeRoot\chrome-win64\chrome.exe"
+          $driverExe = "$driverRoot\chromedriver-win64\chromedriver.exe"
 
-      - name: Install matching ChromeDriver from Chrome for Testing API
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
+          # 获取 Chrome for Testing 最新稳定版本
+          $stableInfo = Invoke-RestMethod `
+            -Uri "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions.json"
 
-          $chromePath = "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe"
-          $chromeVersion = (Get-Item $chromePath).VersionInfo.ProductVersion
-          Write-Host "Installed Chrome version: $chromeVersion"
+          $chromeVersion = $stableInfo.channels.Stable.version
 
-          # 只取 3 段版本号，例如 152.0.0.0 -> 152.0.0.0
-          $version = $chromeVersion.Trim()
+          Write-Host "Chrome for Testing version: $chromeVersion"
 
-          # 查询 Chrome for Testing 的已知版本
-          $knownGood = Invoke-RestMethod "https://googlechromelabs.github.io/chrome-for-testing/known-good-versions.json"
+          # 获取该版本对应的 Chrome 和 ChromeDriver 下载地址
+          $knownGood = Invoke-RestMethod `
+            -Uri "https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json"
 
-          # 找到精确的 Chrome 版本
-          $match = $knownGood.versions |
-            Where-Object { $_.version -eq $version } |
+          $versionInfo = $knownGood.versions |
+            Where-Object { $_.version -eq $chromeVersion } |
             Select-Object -First 1
 
-          if (-not $match) {
-            throw "No matching Chrome for Testing version found for Chrome $version"
+          if (-not $versionInfo) {
+            throw "Cannot find Chrome for Testing version $chromeVersion"
           }
 
-          $driverInfo = $match.downloads.chromedriver |
+          $chromeDownload = $versionInfo.downloads.chrome |
             Where-Object { $_.platform -eq "win64" } |
             Select-Object -First 1
 
-          if (-not $driverInfo) {
-            throw "No compatible win64 ChromeDriver found for Chrome $version"
+          $driverDownload = $versionInfo.downloads.chromedriver |
+            Where-Object { $_.platform -eq "win64" } |
+            Select-Object -First 1
+
+          if (-not $chromeDownload) {
+            throw "Cannot find win64 Chrome download URL"
           }
 
-          $driverUrl = $driverInfo.url
-          $driverDir = "C:\tools\chromedriver"
-          $driverZip = "$env:TEMP\chromedriver.zip"
-          $driverExe = "$driverDir\chromedriver.exe"
+          if (-not $driverDownload) {
+            throw "Cannot find win64 ChromeDriver download URL"
+          }
 
-          New-Item -ItemType Directory -Force -Path $driverDir | Out-Null
-          Invoke-WebRequest -Uri $driverUrl -OutFile $driverZip
-          Expand-Archive -Path $driverZip -DestinationPath $driverDir -Force
+          New-Item -ItemType Directory -Force -Path $chromeRoot | Out-Null
+          New-Item -ItemType Directory -Force -Path $driverRoot | Out-Null
+
+          Invoke-WebRequest `
+            -Uri $chromeDownload.url `
+            -OutFile $chromeZip
+
+          Invoke-WebRequest `
+            -Uri $driverDownload.url `
+            -OutFile $driverZip
+
+          Expand-Archive `
+            -Path $chromeZip `
+            -DestinationPath $chromeRoot `
+            -Force
+
+          Expand-Archive `
+            -Path $driverZip `
+            -DestinationPath $driverRoot `
+            -Force
+
+          if (-not (Test-Path $chromeExe)) {
+            throw "Chrome was not found at $chromeExe"
+          }
 
           if (-not (Test-Path $driverExe)) {
-            throw "ChromeDriver extraction failed."
+            throw "ChromeDriver was not found at $driverExe"
           }
 
-          $env:PATH = "$driverDir;$env:PATH"
-          Write-Host "ChromeDriver downloaded from: $driverUrl"
+          Write-Host "Chrome path: $chromeExe"
+          Write-Host "ChromeDriver path: $driverExe"
 
-      - name: Create settings.json
+          # 传递给后续步骤和 main.py
+          "CHROME_BINARY=$chromeExe" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "CHROME_DRIVER=$driverExe" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Create settings file
         shell: pwsh
         env:
           SETTINGS_JSON: ${{ secrets.SETTINGS_JSON }}
@@ -108,10 +130,13 @@ jobs:
           $ErrorActionPreference = "Stop"
 
           if ([string]::IsNullOrWhiteSpace($env:SETTINGS_JSON)) {
-            throw "SETTINGS_JSON secret is empty."
+            throw "SETTINGS_JSON secret is empty or missing"
           }
 
-          $env:SETTINGS_JSON | Set-Content -Path "setting.json" -Encoding utf8
+          $env:SETTINGS_JSON |
+            Set-Content -Path "setting.json" -Encoding utf8
+
+          python -c "import json; json.load(open('setting.json', encoding='utf-8')); print('SETTINGS_JSON is valid JSON')"
 
       - name: Run main.py
         shell: pwsh
