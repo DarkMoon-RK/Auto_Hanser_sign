@@ -13,7 +13,7 @@ permissions:
 jobs:
   run-main:
     runs-on: windows-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
@@ -36,7 +36,7 @@ jobs:
             python -m pip install -r requirements.txt
           }
 
-      - name: Check Chrome installation
+      - name: Check Chrome and Selenium
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -48,17 +48,35 @@ jobs:
           )
 
           $chromePath = $chromePaths |
-            Where-Object { $_ -and (Test-Path $_) } |
+            Where-Object {
+              $_ -and (Test-Path $_)
+            } |
             Select-Object -First 1
 
           if (-not $chromePath) {
-            throw "Google Chrome was not found on the GitHub Actions runner."
+            throw "Google Chrome was not found."
           }
 
           $chromeVersion = (Get-Item $chromePath).VersionInfo.ProductVersion
 
           Write-Host "Chrome path: $chromePath"
           Write-Host "Chrome version: $chromeVersion"
+
+          python -c "import selenium; print('Selenium version:', selenium.__version__)"
+
+      - name: Remove old ChromeDriver from workspace
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # 删除旧 workflow 可能遗留的 ChromeDriver
+          if (Test-Path "chromedriver.exe") {
+            Remove-Item "chromedriver.exe" -Force
+          }
+
+          if (Test-Path "chromedriver-win64") {
+            Remove-Item "chromedriver-win64" -Recurse -Force
+          }
 
       - name: Create settings file
         shell: pwsh
@@ -68,16 +86,18 @@ jobs:
           $ErrorActionPreference = "Stop"
 
           if ([string]::IsNullOrWhiteSpace($env:SETTINGS_JSON)) {
-            throw "The SETTINGS_JSON secret is empty or has not been configured."
+            throw "SETTINGS_JSON secret is empty or missing."
           }
 
-          $env:SETTINGS_JSON | Set-Content -Path "setting.json" -Encoding utf8
+          $env:SETTINGS_JSON |
+            Set-Content -Path "setting.json" -Encoding utf8
 
-          # 验证 JSON 格式，但不输出密码等敏感信息
           python -c "import json; json.load(open('setting.json', encoding='utf-8')); print('SETTINGS_JSON is valid JSON')"
 
       - name: Run main.py
         shell: pwsh
+        env:
+          SE_MANAGER_PATH: ""
         run: |
           $ErrorActionPreference = "Stop"
           python main.py
