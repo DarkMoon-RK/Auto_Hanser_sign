@@ -4,18 +4,15 @@ import sys
 
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-from pushplus_utils import (
-    get_access_key,
-    send_email,
-    send_pushplus_message,
-)
+from pushplus_utils import get_access_key, send_email, send_pushplus_message
 
 
-# Windows GitHub Actions 使用 UTF-8 输出
+# Windows GitHub Actions 下输出 UTF-8
 if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(
         sys.stdout.buffer,
@@ -24,36 +21,32 @@ if hasattr(sys.stdout, "buffer"):
     )
 
 
-def load_json_file(path):
-    with open(path, "r", encoding="utf-8-sig") as file:
-        return json.load(file)
+def load_json(path):
+    with open(path, "r", encoding="utf-8-sig") as f:
+        return json.load(f)
 
 
-# 读取用户配置
-settings = load_json_file("setting.json")
-user_settings = settings["Set"]
+settings = load_json("setting.json")
+set_config = settings["Set"]
 
-your_username = user_settings["NAME"]
-your_password = user_settings["PASSWORD"]
-use_email = user_settings["USE_EMAIL"]
-to_email = user_settings["TO_EMAIL"]
-pushplus_token = user_settings["PUSHPIUS-TOKEN"]
+your_username = set_config["NAME"]
+your_password = set_config["PASSWORD"]
+use_email = set_config["USE_EMAIL"]
+to_email = set_config["TO_EMAIL"]
+pushplus_token = set_config["PUSHPIUS-TOKEN"]
 
+server = load_json("sever.json")
+server_cfg = server["Sc"]
 
-# 读取服务器配置
-server = load_json_file("sever.json")
-server_settings = server["Sc"]
-
-secret_key = server_settings["SECRETKEY"]
-smtp_server = server_settings["SMTP_SERVER"]
-smtp_port = server_settings["SMTP_PORT"]
-smtp_user = server_settings["SMTP_USER"]
-smtp_password = server_settings["SMTP_PASSWORD"]
-token_server = server_settings["TOKEN_SEVER"]
+secret_key = server_cfg["SECRETKEY"]
+smtp_server = server_cfg["SMTP_SERVER"]
+smtp_port = server_cfg["SMTP_PORT"]
+smtp_user = server_cfg["SMTP_USER"]
+smtp_password = server_cfg["SMTP_PASSWORD"]
+token_server = server_cfg["TOKEN_SEVER"]
 
 
 def send_notification(subject, body):
-    """发送邮件或 PushPlus 通知。"""
     if use_email:
         try:
             send_email(
@@ -65,8 +58,8 @@ def send_notification(subject, body):
                 subject,
                 body,
             )
-        except Exception as error:
-            print(f"邮件发送失败: {error}")
+        except Exception as e:
+            print(f"邮件发送失败: {e}")
     else:
         try:
             access_key, _ = get_access_key(secret_key, token_server)
@@ -76,51 +69,38 @@ def send_notification(subject, body):
                 subject,
                 body,
             )
-        except Exception as error:
-            print(f"PushPlus 消息发送失败: {error}")
+        except Exception as e:
+            print(f"PushPlus 消息发送失败: {e}")
 
 
-def create_driver():
-    """
-    创建 Chrome WebDriver。
+chrome_binary = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+chrome_driver = r"C:\tools\chromedriver\chromedriver.exe"
 
-    不手动指定 chromedriver 路径，让 Selenium Manager 根据当前
-    Chrome 自动下载和匹配对应版本的 ChromeDriver。
-    """
-    options = webdriver.ChromeOptions()
-
-    # GitHub Actions 必须使用无界面模式
-    options.add_argument("--headless=new")
-    options.add_argument("--window-size=1920,1080")
-
-    # GitHub Actions 环境常用参数
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--disable-software-rasterizer")
-    options.add_argument("--ignore-certificate-errors")
-    options.add_argument("--disable-extensions")
-    options.add_argument("--disable-notifications")
-    options.add_argument("--remote-debugging-port=0")
-
-    # 不使用已有用户配置，避免配置文件锁定或损坏导致 Chrome 崩溃
-    options.add_argument("--user-data-dir=" + "selenium-profile")
-
-    # Selenium 4.25 使用 Selenium Manager 自动匹配驱动
-    return webdriver.Chrome(options=options)
-
+options = webdriver.ChromeOptions()
+options.binary_location = chrome_binary
+options.add_argument("--headless=new")
+options.add_argument("--window-size=1920,1080")
+options.add_argument("--no-sandbox")
+options.add_argument("--disable-dev-shm-usage")
+options.add_argument("--disable-gpu")
+options.add_argument("--disable-software-rasterizer")
+options.add_argument("--ignore-certificate-errors")
+options.add_argument("--disable-extensions")
+options.add_argument("--disable-notifications")
+options.add_argument("--remote-debugging-port=0")
+options.add_argument("--user-data-dir=C:\\selenium-profile")
 
 driver = None
 
 try:
     print("正在启动 Chrome WebDriver...")
-    driver = create_driver()
+    driver = webdriver.Chrome(
+        service=Service(chrome_driver),
+        options=options,
+    )
     print("Chrome WebDriver 启动成功。")
 
-    url = "https://2550505.com/"
-    print(f"正在打开网页: {url}")
-    driver.get(url)
-
+    driver.get("https://2550505.com/")
     wait = WebDriverWait(driver, 20)
 
     try:
@@ -128,31 +108,21 @@ try:
             EC.element_to_be_clickable(
                 (
                     By.XPATH,
-                    "//button[contains(@class, 'h-button') "
-                    "and contains(@class, 'h-button--small') "
-                    "and normalize-space()='登录']",
+                    "//button[contains(@class, 'h-button') and contains(@class, 'h-button--small') and normalize-space()='登录']",
                 )
             )
         )
-
         print("找到登录按钮，开始登录。")
         login_button.click()
 
         username_field = wait.until(
             EC.presence_of_element_located(
-                (
-                    By.XPATH,
-                    "//input[@type='text' and @placeholder='昵称/UID']",
-                )
+                (By.XPATH, "//input[@type='text' and @placeholder='昵称/UID']")
             )
         )
-
         password_field = wait.until(
             EC.presence_of_element_located(
-                (
-                    By.XPATH,
-                    "//input[@type='password' and @placeholder='密码']",
-                )
+                (By.XPATH, "//input[@type='password' and @placeholder='密码']")
             )
         )
 
@@ -164,48 +134,33 @@ try:
 
         submit_button = wait.until(
             EC.element_to_be_clickable(
-                (
-                    By.XPATH,
-                    "//button[contains(@class, 'h-button')]"
-                    "//span[normalize-space()='登录']",
-                )
+                (By.XPATH, "//button[contains(@class, 'h-button')]//span[normalize-space()='登录']")
             )
         )
-
         submit_button.click()
 
-        wait.until(
-            EC.presence_of_element_located(
-                (By.CLASS_NAME, "sign-btn")
-            )
-        )
-
+        wait.until(EC.presence_of_element_located((By.CLASS_NAME, "sign-btn")))
         print("登录成功。")
         send_notification("登录成功", "你已经成功登录。")
 
     except TimeoutException:
-        print("没有找到登录按钮，可能已经登录，继续执行签到。")
+        print("未找到登录按钮，可能已登录，继续执行签到。")
 
     try:
         sign_in_button = wait.until(
-            EC.element_to_be_clickable(
-                (By.CLASS_NAME, "sign-btn")
-            )
+            EC.element_to_be_clickable((By.CLASS_NAME, "sign-btn"))
         )
-
         sign_in_button.click()
-
         print("签到成功。")
         send_notification("每日签到成功", "你今天已经成功签到。")
 
     except TimeoutException:
-        print("没有找到签到按钮，可能今天已经签到过了。")
-        send_notification("你今天已经签到过了", "等待明天吧。")
+        print("未找到签到按钮，可能已签到过。")
+        send_notification("你今天已经签到过了", "等待明天再试。")
 
-    except Exception as error:
-        print(f"签到过程中出现错误: {error}")
-        send_notification("签到失败", f"签到失败，请检查错误: {error}")
-        raise
+    except Exception as e:
+        print(f"签到过程中出现错误: {e}")
+        send_notification("签到失败", f"签到失败，请检查错误: {e}")
 
 finally:
     if driver is not None:
