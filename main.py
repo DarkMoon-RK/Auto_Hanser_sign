@@ -1,6 +1,7 @@
 import io
 import json
 import sys
+import os
 
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
@@ -59,11 +60,32 @@ def send_notification(subject, body):
             print(f"PushPlus 消息发送失败: {e}")
 
 
-chrome_binary = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-chrome_driver = r"C:\tools\chromedriver\chromedriver.exe"
+chrome_binary = os.environ.get(
+    "CHROME_BINARY",
+    r"C:\tools\chrome\chrome-win64\chrome.exe",
+)
+
+chrome_driver = os.environ.get(
+    "CHROME_DRIVER",
+    r"C:\tools\chromedriver\chromedriver-win64\chromedriver.exe",
+)
+
+print(f"Chrome path: {chrome_binary}")
+print(f"ChromeDriver path: {chrome_driver}")
+
+if not os.path.isfile(chrome_binary):
+    raise FileNotFoundError(
+        f"Chrome executable not found: {chrome_binary}"
+    )
+
+if not os.path.isfile(chrome_driver):
+    raise FileNotFoundError(
+        f"ChromeDriver executable not found: {chrome_driver}"
+    )
 
 options = webdriver.ChromeOptions()
 options.binary_location = chrome_binary
+
 options.add_argument("--headless=new")
 options.add_argument("--window-size=1920,1080")
 options.add_argument("--no-sandbox")
