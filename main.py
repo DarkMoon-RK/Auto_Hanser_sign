@@ -12,7 +12,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from pushplus_utils import get_access_key, send_email, send_pushplus_message
 
 
-# Windows GitHub Actions 下输出 UTF-8
 if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(
         sys.stdout.buffer,
@@ -27,48 +26,35 @@ def load_json(path):
 
 
 settings = load_json("setting.json")
-set_config = settings["Set"]
+cfg = settings["Set"]
 
-your_username = set_config["NAME"]
-your_password = set_config["PASSWORD"]
-use_email = set_config["USE_EMAIL"]
-to_email = set_config["TO_EMAIL"]
-pushplus_token = set_config["PUSHPIUS-TOKEN"]
+your_username = cfg["NAME"]
+your_password = cfg["PASSWORD"]
+use_email = cfg["USE_EMAIL"]
+to_email = cfg["TO_EMAIL"]
+pushplus_token = cfg["PUSHPIUS-TOKEN"]
 
 server = load_json("sever.json")
-server_cfg = server["Sc"]
+sc = server["Sc"]
 
-secret_key = server_cfg["SECRETKEY"]
-smtp_server = server_cfg["SMTP_SERVER"]
-smtp_port = server_cfg["SMTP_PORT"]
-smtp_user = server_cfg["SMTP_USER"]
-smtp_password = server_cfg["SMTP_PASSWORD"]
-token_server = server_cfg["TOKEN_SEVER"]
+secret_key = sc["SECRETKEY"]
+smtp_server = sc["SMTP_SERVER"]
+smtp_port = sc["SMTP_PORT"]
+smtp_user = sc["SMTP_USER"]
+smtp_password = sc["SMTP_PASSWORD"]
+token_server = sc["TOKEN_SEVER"]
 
 
 def send_notification(subject, body):
     if use_email:
         try:
-            send_email(
-                smtp_server,
-                smtp_port,
-                smtp_user,
-                smtp_password,
-                to_email,
-                subject,
-                body,
-            )
+            send_email(smtp_server, smtp_port, smtp_user, smtp_password, to_email, subject, body)
         except Exception as e:
             print(f"邮件发送失败: {e}")
     else:
         try:
             access_key, _ = get_access_key(secret_key, token_server)
-            send_pushplus_message(
-                pushplus_token,
-                access_key,
-                subject,
-                body,
-            )
+            send_pushplus_message(pushplus_token, access_key, subject, body)
         except Exception as e:
             print(f"PushPlus 消息发送失败: {e}")
 
@@ -88,7 +74,6 @@ options.add_argument("--ignore-certificate-errors")
 options.add_argument("--disable-extensions")
 options.add_argument("--disable-notifications")
 options.add_argument("--remote-debugging-port=0")
-options.add_argument("--user-data-dir=C:\\selenium-profile")
 
 driver = None
 
@@ -128,7 +113,6 @@ try:
 
         username_field.clear()
         username_field.send_keys(your_username)
-
         password_field.clear()
         password_field.send_keys(your_password)
 
@@ -147,9 +131,7 @@ try:
         print("未找到登录按钮，可能已登录，继续执行签到。")
 
     try:
-        sign_in_button = wait.until(
-            EC.element_to_be_clickable((By.CLASS_NAME, "sign-btn"))
-        )
+        sign_in_button = wait.until(EC.element_to_be_clickable((By.CLASS_NAME, "sign-btn")))
         sign_in_button.click()
         print("签到成功。")
         send_notification("每日签到成功", "你今天已经成功签到。")
